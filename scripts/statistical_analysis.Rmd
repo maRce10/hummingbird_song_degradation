@@ -1,0 +1,486 @@
+---
+title: "Acoustic adaptation in hummingbird songs"
+author: <a href="http://marceloarayasalas.weebly.com/">Marcelo Araya-Salas</a>
+ &nbsp; 
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: kable
+    toc: no
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+editor_options: 
+  chunk_output_type: console
+---
+
+# install/load packages
+```{r packages, eval=T}
+
+x <- c("warbleR", "baRulho", "readxl", "pbapply", "ape", "MCMCglmm", "phytools", "ggtree", "viridis", "ggplot2")
+
+aa <- lapply(x, function(y){
+  if(!y %in% installed.packages()[,"Package"])  {if(y != "warbleR") install.packages(y) else devtools::install_github("maRce10/warbleR")
+}
+try(require(y, character.only = T), silent = T)
+  })
+
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+
+knitr::opts_chunk$set(dpi = 80, fig.width = 12, fig.height = 8, eval = FALSE) 
+
+theme_set(theme_classic(base_size = 24))
+
+```
+
+```{r pruning tree, eval = TRUE}
+
+full_tree <- read.tree("./data/raw/consensus_tree_swifts_hummingbirds_and_nighjars_max_cred.tree")
+
+master.sf <- read.csv("./data/processed/selection_table_open_and_closed_habitat.csv")
+
+master.sf$species <- sapply(master.sf$orig.sound.file, function(x) paste(strsplit(x, split = "-")[[1]][1:2], collapse = "_"))
+
+est <- readRDS("./data/processed/extended_selection_table_open_and_closed_habitat.RDS")
+
+master.sf$habitat <- sapply(1:nrow(master.sf), function(x) est$habitat[est$Species_uscr == master.sf$species[x]][1])
+
+
+sp_list <- unique(grep("marker", master.sf$species, value = TRUE, invert = TRUE))
+
+tree <- drop.tip(full_tree, tip = setdiff(full_tree$tip.label, sp_list))
+
+# write.tree(tree, "./data/processed/prunned_tree.tre")
+
+hab <- as.numeric(as.factor(master.sf$habitat))
+
+names(hab) <- master.sf$species
+
+ ggtree(tree) %<+% master.sf[, c("species", "habitat")] + geom_tippoint(aes(color=habitat), size=4, shape = 20) +
+ scale_colour_viridis(discrete = TRUE, begin = 0.2, end = 0.8, alpha = 0.7)
+
+
+```
+
+```{r degradation analysis}
+
+master.sf <- read.csv("./data/processed/selection_table_open_and_closed_habitat.csv")
+
+master.sf$species <- sapply(master.sf$orig.sound.file, function(x) paste(strsplit(x, split = "-")[[1]][1:2], collapse = "_"))
+
+sp <- unique(grep("marker", master.sf$species, value = TRUE, invert = TRUE))
+
+# write.csv(data.frame(sp), file = "./data/raw/species_list.csv", row.names = FALSE)
+
+est <- readRDS("./data/processed/extended_selection_table_open_and_closed_habitat.RDS")
+
+master.sf$habitat <- sapply(1:nrow(master.sf), function(x) est$habitat[est$Species_uscr == master.sf$species[x]][1])
+
+wi <- wav_info(path = "./data/raw/recordings")
+table(wi$bits)
+
+# fix_wavs(samp.rate = 48, bit.depth = 16, path = "./data/raw/recordings")
+
+wi <- wav_info(path = "./data/raw/recordings/converted_sound_files")
+table(wi$bits)
+table(wi$sample.rate)
+
+test_files <- list.files(path = "./data/raw/recordings/converted_sound_files", pattern = "wav$", ignore.case = TRUE)[-1]
+
+# those that did not record all sounds
+test_files_short <- c("TASCAM_0674.wav", "TASCAM_0673.wav", "TASCAM_0670.wav", "ZOOM0038_Tr1.WAV")
+
+redo <- c("ZOOM0050_Tr1.WAV", "ZOOM0055_Tr1.WAV", "ZOOM0060_Tr1.WAV", "ZOOM0065_Tr1.WAV")
+
+test_files_complete <- setdiff(test_files, c(test_files_short))
+
+test_files_complete
+
+# search template on incomplete re-recorded files (those not including start marker)
+starts_complete <- search_templates(X = master.sf, template.rows = which(master.sf$orig.sound.file =="end_marker"), test.files = test_files_complete, path = "./data/raw/recordings/converted_sound_files", parallel = 10)
+
+alg_complete <- align_test_files(X = master.sf, Y = starts_complete, path = "./data/raw/recordings/converted_sound_files", by.song = TRUE)
+
+alg_complete_df <- align_test_files(X = master.sf, Y = starts_complete, path = "./data/raw/recordings/converted_sound_files", by.song = TRUE, output = "data.frame")
+
+
+full_spec(X = alg_complete_df, flim = c(1, 13), sxrow = 6, rows = 15, ovlp = 50, fast.spec = TRUE, path = "./data/raw/recordings/converted_sound_files", wl = 300, parallel = 10, horizontal = TRUE, suffix = "complete")
+
+
+# search template on incomplete re-recorded files (those not including start marker)
+end_short <- search_templates(X = master.sf, template.rows = which(master.sf$orig.sound.file =="end_marker"), test.files = test_files_short, path = "./data/raw/recordings/converted_sound_files")
+
+alg_short <- align_test_files(X = master.sf, Y = end_short, path = "./data/raw/recordings/converted_sound_files", by.song = TRUE, marker = "end")
+
+alg_short_df <- align_test_files(X = master.sf, Y = end_short, path = "./data/raw/recordings/converted_sound_files", by.song = TRUE, output = "data.frame")
+
+full_spec(X = alg_short_df, flim = c(1, 13), sxrow = 6, rows = 15, ovlp = 50, fast.spec = TRUE, path = "./data/raw/recordings/converted_sound_files", wl = 300, parallel = 10, horizontal = TRUE, suffix = "short")
+
+delete <- c("ZOOM0055_Tr1.WAV")
+
+fix_some <- c("TASCAM_0674.wav", "TASCAM_0673.wav", "TASCAM_0670.wav", "ZOOM0038_Tr1.WAV")
+
+
+)
+alg_complete <- alg_complete[grep("ZOOM0055_Tr1.WAV", alg_complete$sound.files, invert = TRUE), ]
+
+
+full_alg <- rbind(alg_complete, alg_short)
+full_alg <- full_alg[!(grepl("ZOOM0038_Tr1.WAV", full_alg$sound.files) & full_alg$selec %in% 1:26), ]
+
+
+full_alg <- full_alg[!(grepl("TASCAM_0670.wav", full_alg$sound.files) & full_alg$selec %in% 1:14), ]
+
+full_alg <- full_alg[!(grepl("TASCAM_0673.wav", full_alg$sound.files) & full_alg$selec %in% 1:91), ]
+
+full_alg <- full_alg[!(grepl("TASCAM_0674.wav", full_alg$sound.files) & full_alg$selec %in% 1:58), ]
+
+full_alg <- full_alg[grep("marker", full_alg$template, invert = TRUE), ]
+
+full_alg$signal.type <- full_alg$template
+
+
+metadat <- read_excel("./data/raw/re-recorded_files_metadata.xlsx")
+
+full_alg$org.sound.files <- sapply(full_alg$sound.files, function(x) strsplit(x, "-")[[1]][1])
+
+full_alg$distance <- sapply(full_alg$org.sound.files, function(x) metadat$`distance (m)`[metadat$`sound file` == x])
+
+full_alg$habitat <- sapply(full_alg$org.sound.files, function(x) metadat$habitat[metadat$`sound file` == x])
+
+full_alg$species <- sapply(full_alg$template, function(x) paste(strsplit(x, split = "-")[[1]][1:2], collapse = "_"))
+
+saveRDS(full_alg, "./data/processed/extended_selection_table_re-recorded_aligned_signals.RDS")
+
+```
+
+```{r}
+
+full_alg <- readRDS("./data/processed/extended_selection_table_re-recorded_aligned_signals.RDS")
+
+prl <- 20
+
+# tascam equipment
+alg_tascam_df <- as.data.frame(full_alg[grep("TASCAM", full_alg$org.sound.files), ])
+
+alg_tascam_df$blur.ratio <- blur_ratio(full_alg[grep("TASCAM", full_alg$org.sound.files), ], method = 1, pb = TRUE, parallel = prl, output = "data.frame")$blur.ratio
+
+alg_tascam_df$spectral.blur.ratio  <- spectral_blur_ratio(full_alg[grep("TASCAM", full_alg$org.sound.files), ], method = 1, pb = TRUE, parallel = prl, output = "data.frame")$spectral.blur.ratio 
+
+alg_tascam_df$envelope.correlation <- envelope_correlation(full_alg[grep("TASCAM", full_alg$org.sound.files), ], method = 1,  pb = TRUE, parallel = prl, output = "data.frame")$envelope.correlation 
+
+alg_tascam_df$spectral_correlation <- spectral_correlation(full_alg[grep("TASCAM", full_alg$org.sound.files), ], method = 1,  pb = TRUE, parallel = prl, output = "data.frame")$spectral.correlation
+
+alg_tascam_df$signal.to.noise.ratio  <- signal_to_noise_ratio(full_alg[grep("TASCAM", full_alg$org.sound.files), ], pb = TRUE, parallel = prl, noise.ref = "adjacent", mar = 0.01, output = "data.frame")$signal.to.noise.ratio 
+
+alg_tascam_df$tail.to.signal.ratio <- tail_to_signal_ratio(full_alg[grep("TASCAM", full_alg$org.sound.files), ], pb = TRUE, parallel = prl, mar = 0.01, output = "data.frame")$tail.to.signal.ratio
+
+alg_tascam_df$cross.correlation <- spcc(X = full_alg[grep("TASCAM", full_alg$org.sound.files), ], method = 1, pb = TRUE, parallel = prl, output = "data.frame")$cross.correlation 
+
+alg_tascam_df$excess.attenuation <- excess_attenuation(X = full_alg[grep("TASCAM", full_alg$org.sound.files), ], method = 1, pb = TRUE, parallel = prl, output = "data.frame")$excess.attenuation
+
+alg_tascam_df$equipment <- "Tascam"
+
+write.csv(alg_tascam_df, "./data/processed/DEGRADATION_MEASUREMENTS_TASCAM.csv", row.names = FALSE)
+
+
+# zoom
+alg_zoom_df <- as.data.frame(full_alg[grep("ZOOM", full_alg$org.sound.files), ])
+
+alg_zoom_df$blur.ratio <- blur_ratio(full_alg[grep("ZOOM", full_alg$org.sound.files), ], method = 1, pb = TRUE, parallel = prl, output = "data.frame")$blur.ratio
+
+alg_zoom_df$spectral.blur.ratio  <- spectral_blur_ratio(full_alg[grep("ZOOM", full_alg$org.sound.files), ], method = 1, pb = TRUE, parallel = prl, output = "data.frame")$spectral.blur.ratio 
+
+alg_zoom_df$envelope.correlation <- envelope_correlation(full_alg[grep("ZOOM", full_alg$org.sound.files), ], method = 1,  pb = TRUE, parallel = prl, output = "data.frame")$envelope.correlation 
+
+alg_zoom_df$spectral_correlation <- spectral_correlation(full_alg[grep("ZOOM", full_alg$org.sound.files), ], method = 1,  pb = TRUE, parallel = prl, output = "data.frame")$spectral.correlation
+
+alg_zoom_df$signal.to.noise.ratio  <- signal_to_noise_ratio(full_alg[grep("ZOOM", full_alg$org.sound.files), ], pb = TRUE, parallel = prl, noise.ref = "adjacent", mar = 0.01, output = "data.frame")$signal.to.noise.ratio 
+
+alg_zoom_df$tail.to.signal.ratio <- tail_to_signal_ratio(full_alg[grep("ZOOM", full_alg$org.sound.files), ], pb = TRUE, parallel = prl, mar = 0.01, output = "data.frame")$tail.to.signal.ratio
+
+alg_zoom_df$cross.correlation <- spcc(X = full_alg[grep("ZOOM", full_alg$org.sound.files), ], method = 1, pb = TRUE, parallel = prl, output = "data.frame")$cross.correlation 
+
+alg_zoom_df$excess.attenuation <- excess_attenuation(X = full_alg[grep("ZOOM", full_alg$org.sound.files), ], method = 1, pb = TRUE, parallel = prl, output = "data.frame")$excess.attenuation
+
+alg_zoom_df$equipment <- "Zoom"
+
+degrad_metrics <- rbind(alg_zoom_df, alg_tascam_df)
+
+write.csv(degrad_metrics, "./data/processed/DEGRADATION_MEASUREMENTS.csv", row.names = FALSE)
+
+
+```
+
+```{r}
+
+degrad <- read.csv("./data/processed/DEGRADATION_MEASUREMENTS.csv")
+
+metadat <- read_excel("./data/raw/re-recorded_files_metadata.xlsx")
+
+mass <- read_excel("./data/raw/species_body_mass.xlsx")
+
+degrad$transect <- sapply(degrad$org.sound.files, function(x) metadat$transect[metadat$`sound file` == x])
+
+degrad$size <- sapply(degrad$species, function(x) mass$`Body mass (g)`[mass$sp == x])
+
+sp_hab <- read_excel("./data/raw/Hummingbird habitat data_NEW.xlsx")
+
+sp_hab$Species <- gsub(" ", "_", sp_hab$Species)
+degrad$sp_habitat <- sapply(degrad$species, function(x) sp_hab$Classification[sp_hab$Species == x])
+
+names(degrad)
+
+length(unique(degrad$species))
+
+degrad$phylo <- degrad$species 
+
+degrad$signal.type <- gsub("-dup", "", degrad$signal.type)
+degrad$blur.ratio <- as.numeric(degrad$blur.ratio)
+degrad$spectral.blur.ratio <- as.numeric(degrad$spectral.blur.ratio)
+degrad$envelope.correlation <- as.numeric(degrad$envelope.correlation)
+degrad$spectral_correlation <- as.numeric(degrad$spectral_correlation)
+degrad$cross.correlation <- as.numeric(degrad$cross.correlation)
+str(degrad)
+
+tree <- read.tree("./data/processed/prunned_tree.tre")
+
+all(tree$tip.label %in% degrad$species)
+all(degrad$species %in% tree$tip.label)
+
+inv.phylo <- inverseA(tree, nodes="TIPS", scale=TRUE)
+
+preds <- c("blur.ratio", "spectral.blur.ratio", "envelope.correlation", "spectral_correlation", "signal.to.noise.ratio", "tail.to.signal.ratio", "cross.correlation", "excess.attenuation")
+
+itrn <- 8000
+
+mods <- pblapply(preds, cl = 1, function(i){
+
+  subdat <- degrad[!(is.na(degrad[, i]) | is.infinite(degrad[, i])), ]
+  
+  mod1 <- try(MCMCglmm(as.formula(paste(i, " ~ habitat * sp_habitat + size")), random = ~ equipment + transect + signal.type + phylo + distance, data = subdat, verbose = FALSE, ginverse = list(phylo = inv.phylo$Ainv), nitt = itrn), silent = TRUE)
+
+  if(!is(mod1, "try-error"))
+    return(mod1) else
+      return(NULL)
+})
+names(mods) <- preds
+
+saveRDS(mods, "./output/mcmcglmm_models_habitat_sound_degradation.RDS")
+
+mods_closed <- pblapply(preds, cl = 1, function(i){
+
+  subdat <- degrad[!(is.na(degrad[, i]) | is.infinite(degrad[, i])), ]
+  subdat <- subdat[subdat$habitat == "closed", ]
+  
+  mod <- try(MCMCglmm(as.formula(paste(i, " ~ distance * sp_habitat + size")), random = ~ equipment + transect + signal.type + phylo, data = subdat, verbose = FALSE, ginverse = list(phylo = inv.phylo$Ainv), nitt = itrn), silent = TRUE)
+
+  if(!is(mod, "try-error"))
+    return(mod) else
+      return(NULL)
+})
+names(mods_closed) <- preds
+
+saveRDS(mods_closed, "./output/mcmcglmm_models_habitat_by_distance_sound_degradation_in_closed_habitat.RDS")
+
+mods_open <- pblapply(preds, cl = 1, function(i){
+
+  subdat <- degrad[!(is.na(degrad[, i]) | is.infinite(degrad[, i])), ]
+  subdat <- subdat[subdat$habitat == "open", ]
+  
+  mod <- try(MCMCglmm(as.formula(paste(i, " ~ distance * sp_habitat + size")), random = ~ equipment + transect + signal.type + phylo, data = subdat, verbose = FALSE, ginverse = list(phylo = inv.phylo$Ainv), nitt = itrn), silent = TRUE)
+
+  if(!is(mod, "try-error"))
+    return(mod) else
+      return(NULL)
+})
+names(mods_open) <- preds
+
+saveRDS(mods_open, "./output/mcmcglmm_models_habitat_by_distance_sound_degradation_in_open_habitat.RDS")
+
+```
+
+## Habitat of origin vs habitat of transmission
+
+```{r, eval = TRUE}
+
+mods <- readRDS("./output/mcmcglmm_models_habitat_sound_degradation.RDS")
+
+print("didn't work:")
+names(mods)[sapply(mods, is.null)]
+
+mods <- mods[!sapply(mods, is.null)]
+
+summ_mods <- lapply(mods, summary)
+
+names(summ_mods) <- mods
+
+summ_mods
+
+```
+
+## Habitat by distance interaction in closed habitats
+
+```{r, eval = TRUE}
+
+mods <- readRDS("./output/mcmcglmm_models_habitat_by_distance_sound_degradation_in_closed_habitat.RDS")
+
+print("didn't work:")
+names(mods)[sapply(mods, is.null)]
+
+mods <- mods[!sapply(mods, is.null)]
+
+summ_mods <- lapply(mods, summary)
+
+names(summ_mods) <- mods
+
+summ_mods
+
+```
+
+## Habitat by distance interaction in open habitats
+
+```{r, eval = TRUE}
+
+mods <- readRDS("./output/mcmcglmm_models_habitat_by_distance_sound_degradation_in_open_habitat.RDS")
+
+print("didn't work:")
+names(mods)[sapply(mods, is.null)]
+
+mods <- mods[!sapply(mods, is.null)]
+
+summ_mods <- lapply(mods, summary)
+
+names(summ_mods) <- mods
+
+summ_mods
+
+
+```
+
+## Graphs
+
+```{r, eval = TRUE}
+
+degrad <- read.csv("./data/processed/DEGRADATION_MEASUREMENTS.csv")
+
+metadat <- read_excel("./data/raw/re-recorded_files_metadata.xlsx")
+
+mass <- read_excel("./data/raw/species_body_mass.xlsx")
+
+degrad$transect <- sapply(degrad$org.sound.files, function(x) metadat$transect[metadat$`sound file` == x])
+
+degrad$size <- sapply(degrad$species, function(x) mass$`Body mass (g)`[mass$sp == x])
+
+sp_hab <- read_excel("./data/raw/Hummingbird habitat data_NEW.xlsx")
+
+sp_hab$Species <- gsub(" ", "_", sp_hab$Species)
+degrad$sp_habitat <- sapply(degrad$species, function(x) sp_hab$Classification[sp_hab$Species == x])
+
+names(degrad)
+
+length(unique(degrad$species))
+
+degrad$phylo <- degrad$species 
+
+degrad$signal.type <- gsub("-dup", "", degrad$signal.type)
+degrad$blur.ratio <- as.numeric(degrad$blur.ratio)
+degrad$spectral.blur.ratio <- as.numeric(degrad$spectral.blur.ratio)
+degrad$envelope.correlation <- as.numeric(degrad$envelope.correlation)
+degrad$spectral_correlation <- as.numeric(degrad$spectral_correlation)
+degrad$cross.correlation <- as.numeric(degrad$cross.correlation)
+
+preds <- c("blur.ratio", "spectral.blur.ratio", "envelope.correlation", "spectral_correlation", "signal.to.noise.ratio", "tail.to.signal.ratio", "cross.correlation", "excess.attenuation")
+
+se <- function(x, na.rm = TRUE) sd(x, na.rm = na.rm) / sqrt(length(x[!is.na(x)]))
+
+ggs <- pblapply(preds, function(x){
+  
+  X <- degrad[!(is.na(degrad[, x]) | is.infinite(degrad[, x])), ]
+  
+  Y <- aggregate(as.formula(paste(x, " ~ habitat * sp_habitat")), data = X, mean, na.rm = TRUE)
+  names(Y)[ncol(Y)] <- "mean"
+  Y$sd <- aggregate(as.formula(paste(x, " ~ habitat * sp_habitat")), data = X, sd, na.rm = TRUE)[, 3]
+  Y$se <- aggregate(as.formula(paste(x, " ~ habitat * sp_habitat")), data = X, se, na.rm = TRUE)[, 3]
+  # Y$ymin <- Y[,x] - Y$se
+  # Y$ymax <- Y[,x] + Y$se
+  # 
+  gg <- ggplot(Y, aes(x = sp_habitat, y = mean, color = habitat)) +
+    geom_point(size = 4) +
+    geom_errorbar(width=.2, aes(ymin = mean - se, ymax = mean + se), lwd = 2) + 
+    scale_colour_viridis(discrete = TRUE, begin = 0.2, end = 0.8, alpha = 0.7) +
+    labs(y = x, "habitat") +
+        theme_classic(base_size = 24)
+
+  return(gg)
+  
+})
+
+ggs
+
+ggs <- pblapply(preds, function(x){
+  
+  X <- degrad[!(is.na(degrad[, x]) | is.infinite(degrad[, x])), ]
+  
+  Y <- aggregate(as.formula(paste(x, " ~ habitat * sp_habitat")), data = X, mean, na.rm = TRUE)
+  names(Y)[ncol(Y)] <- "mean"
+  Y$sd <- aggregate(as.formula(paste(x, " ~ habitat * sp_habitat")), data = X, sd, na.rm = TRUE)[, 3]
+  Y$se <- aggregate(as.formula(paste(x, " ~ habitat * sp_habitat")), data = X, se, na.rm = TRUE)[, 3]
+  # Y$ymin <- Y[,x] - Y$se
+  # Y$ymax <- Y[,x] + Y$se
+  # 
+  gg <- ggplot(Y, aes(x = habitat, y = mean, color = sp_habitat)) +
+    geom_point(size = 4) +
+    geom_errorbar(width=.2, aes(ymin = mean - se, ymax = mean + se), lwd = 2) + 
+    scale_colour_viridis(discrete = TRUE, begin = 0.2, end = 0.8, alpha = 0.7) +
+    labs(y = x,  x = "habitat") +
+      theme_classic(base_size = 24)
+
+  return(gg)
+  
+})
+
+ggs
+```
+
+
+```{r, eval = FALSE}
+
+wv <- read_wave("./data/raw/recordings/ETC21_duplicated_master_44.1.wav")
+
+library(dynaSpec)
+scrolling_spectro(wave = wv, wl = 400,
+    t.display = 1, ovlp = 95, pal = inferno,
+    grid = FALSE, flim = c(1, 13), width = 900,
+    height = 250, res = 100, collevels = seq(-40, 0, 5),
+    file.name = "./output/playback_full_osc.mp4", colbg = "black", lcol = "#FFFFFFE6",
+    speed = 0.7, fps = 200, buffer = 0, loop = 1, lty = 1,
+    osc = TRUE, colwave = inferno(10, alpha = 0.9)[3])
+
+scrolling_spectro(wave = wv, wl = 400, lower.spectro = TRUE,
+    t.display = 1, ovlp = 95, pal = inferno,
+    grid = FALSE, flim = c(1, 13), width = 900,
+    height = 400, res = 100, collevels = seq(-40, 0, 5),
+    file.name = "./output/playback_full.mp4", colbg = "black", lcol = "#FFFFFFE6",
+    speed = 0.7, fps = 200, buffer = 0, loop = 1, lty = 1,
+    osc = FALSE, colwave = inferno(10, alpha = 0.9)[3])
+
+scrolling_spectro(wave = wv, wl = 400, lower.spectro = TRUE,axis.type = "minimal",
+    t.display = 1, ovlp = 95, pal = inferno,
+    grid = FALSE, flim = c(1, 13), width = 900,
+    height = 400, res = 100, collevels = seq(-40, 0, 5),
+    file.name = "./output/playback_full_minimal.mp4", colbg = "black", lcol = "#FFFFFFE6",
+    speed = 0.7, fps = 200, buffer = 0, loop = 1, lty = 1,
+    osc = FALSE, colwave = inferno(10, alpha = 0.9)[3])
+
+scrolling_spectro(wave = wv, wl = 400, lower.spectro = TRUE,axis.type = "none",
+    t.display = 1, ovlp = 95, pal = inferno,
+    grid = FALSE, flim = c(1, 13), width = 900,
+    height = 400, res = 100, collevels = seq(-40, 0, 5),
+    file.name = "./output/playback_full_no_axis.mp4", colbg = "black", lcol = "#FFFFFFE6",
+    speed = 0.7, fps = 200, buffer = 0, loop = 1, lty = 1,
+    osc = FALSE, colwave = inferno(10, alpha = 0.9)[3])
+
+
+```
+

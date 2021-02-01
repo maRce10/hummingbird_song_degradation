@@ -1,0 +1,129 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+
+# install/load packages
+```{r packages, eval=T}
+
+x <- c("warbleR", "baRulho", "readxl", "pbapply")
+
+aa <- lapply(x, function(y){
+  if(!y %in% installed.packages()[,"Package"])  {if(y != "warbleR") install.packages(y) else devtools::install_github("maRce10/warbleR")
+}
+try(require(y, character.only = T), silent = T)
+  })
+
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+
+knitr::opts_chunk$set(dpi = 58, fig.width = 12) 
+
+```
+
+```{r}
+
+library(sketchy)
+
+# make_compendium(name = "ETC-2021", path = "..", format = compendiums$basic$skeleton, force = TRUE)
+
+
+```
+
+
+```{r}
+
+# read habitat data
+
+hab_dat <- as.data.frame(read_excel(path = "./data/raw/Hummingbird habitat data_NEW.xlsx"))
+
+table(hab_dat$Classification)
+
+sel_hab <- hab_dat[hab_dat$Classification %in% c("Closed", "Open"), ]
+
+table(sel_hab$Classification)
+
+
+# read acoustic data
+
+song_dat_org <- readRDS("./data/raw/extended_selection_table_hummingbirds_swifts_nightjars.RDS")
+
+song_dat_org$song <- as.character(song_dat_org$song)
+
+out <- pblapply(unique(song_dat_org$Species), cl = 3, function(x){
+  
+  X <- song_dat_org[song_dat_org$Species == x, ]
+  
+  song_snr <- aggregate(SNR ~ song + selec.file, data = X, FUN = mean)
+  
+  song_snr <- song_snr[order(song_snr$SNR, decreasing = TRUE), ]
+  
+  song_snr <- song_snr[!duplicated(song_snr$selec.file), ]
+  
+  Y <- X[X$song %in% song_snr$song[1:2], , drop = FALSE]
+  
+return(as.data.frame(Y))
+})
+
+
+song_dat <- do.call(rbind, out)
+
+sub_song_open <- song_dat[song_dat$Species %in%  sel_hab$Species[sel_hab$Classification == "Open"], ]
+
+length(unique(sub_song_open$Species))
+
+sum(aggregate(song ~ Species, data = song_dat, FUN = function(x) length(unique(x)))$song)
+
+sum(aggregate(song ~ Species, data = sub_song_open, FUN = function(x) length(unique(x)))$song)
+
+
+
+
+(sum(sub_song_open$duration) + (0.15 * nrow(sub_song_open)))  / 60
+
+sub_song_closed <- song_dat[song_dat$Species %in%  sel_hab$Species[sel_hab$Classification == "Closed"], ]
+
+(sum(sub_song_closed$duration) + (0.3 * nrow(sub_song_closed)))  / 60
+
+
+((sum(sub_song_open$duration) + (0.15 * nrow(sub_song_open)))  / 60) + ((sum(sub_song_closed$duration) + (0.3 * nrow(sub_song_closed)))  / 60)
+
+
+length(unique(sub_song_closed$Species))
+
+sub_song_closed$habitat <- "Closed"
+sub_song_open$habitat <- "Open"
+
+
+sel_tab <- rbind(sub_song_closed, sub_song_open)
+
+
+est <-  fix_extended_selection_table(X = sel_tab, Y = song_dat_org)
+
+est2 <- est
+
+est2 <- rename_waves_est(X = est2, new.sound.files = paste0(est2$sound.files, "-dup"))
+
+# est2$selec <- 582:(nrow(est) + 581)
+
+est_dup <- rbind(est, est2)
+
+set.seed(10)
+est_dup <- est_dup[sample(1:nrow(est_dup)), ]
+
+saveRDS(est_dup, "./data/processed/extended_selection_table_open_and_closed_habitat.RDS")
+
+```
+
+```{r}
+
+est <- readRDS("./data/processed/extended_selection_table_open_and_closed_habitat.RDS")
+
+master.sf <- master_sound_file(X = est, file.name = "ETC21_duplicated_master", dest.path = "./data/processed", gap.duration = 0.10)
+
+write.csv(master.sf, "./data/processed/selection_table_open_and_closed_habitat.csv", row.names = FALSE)
+
+```
+

@@ -1,0 +1,7 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+data/processed/extended_selection_table_re-recorded_aligned_signals.RDS
+data/raw/extended_selection_table_hummingbirds_swifts_nightjars.RDS
+data/raw/recordings
